@@ -1,0 +1,22 @@
+[
+    {
+        "url": "https://raw.githubusercontent.com/Phatbn11/DVXX/builds/Vlxx.cs3",
+        "status": 3,
+        "version": 7,
+        "name": "Vlxx",
+        "internalName": "Vlxx",
+        "authors": [
+            "duongnv1996",
+            "Jace"
+        ],
+        "description": "Vietnamese Subbed. CloudFare.",
+        "fileSize": 15579,
+        "repositoryUrl": "https://github.com/Phatbn11/DVXX",
+        "language": "en",
+        "tvTypes": [
+            "NSFW"
+        ],
+        "iconUrl": "https://www.google.com/s2/favicons?domain=vlxx.sex&sz=%size%",
+        "apiVersion": 1
+    }
+]
