@@ -1,15 +1,11 @@
 package com.phatbn11
 
-import android.content.Context
-import com.byayzen.xVideosExtractor
 import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
 import com.lagradost.cloudstream3.plugins.Plugin
 
 @CloudstreamPlugin
-class VlxxPlugin: Plugin() {
+class VlxxPlugin : Plugin() {
     override fun load() {
         registerMainAPI(Vlxx())
-        registerExtractorAPI(Vlxx())
     }
-}
 }
