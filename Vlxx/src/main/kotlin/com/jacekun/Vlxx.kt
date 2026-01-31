@@ -1,18 +1,17 @@
 package com.jacekun
 
-import com.lagradost.cloudstream3.MainAPI
-import com.lagradost.cloudstream3.TvType
 import android.util.Log
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.*
-import com.lagradost.cloudstream3.utils.AppUtils.logError
+import com.lagradost.cloudstream3.utils.*
 import com.lagradost.cloudstream3.network.CloudflareKiller
-import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
-import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.ExtractorLinkType
-import com.lagradost.cloudstream3.utils.Qualities.getQualityFromName
-import com.lagradost.cloudstream3.utils.newExtractorLink
 import com.lagradost.nicehttp.NiceResponse
+
+// Import chính xác cho bản 2026
+import com.lagradost.cloudstream3.utils.AppUtils.logError
+import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
+import com.lagradost.cloudstream3.utils.Qualities.getQualityFromName
+import com.lagradost.cloudstream3.MainAPIKt.fixUrl
 
 class Vlxx : MainAPI() {
     private val DEV = "DevDebug"
@@ -27,16 +26,8 @@ class Vlxx : MainAPI() {
     private val interceptor = CloudflareKiller()
 
     private suspend fun getPage(url: String, referer: String): NiceResponse {
-        var count = 0
-        var resp = app.get(url, referer = referer, interceptor = interceptor)
+        val resp = app.get(url, referer = referer, interceptor = interceptor)
         Log.i(DEV, "Page Response => ${resp}")
-//        while (!resp.isSuccessful) {
-//            resp = app.get(url, interceptor = interceptor)
-//            count++
-//            if (count > 4) {
-//                return resp
-//            }
-//        }
         return resp
     }
 
@@ -44,34 +35,28 @@ class Vlxx : MainAPI() {
         page: Int,
         request: MainPageRequest
     ): HomePageResponse {
-        val apiName = this.name
         val document = getPage(mainUrl, mainUrl).document
         val all = ArrayList<HomePageList>()
         val title = "Homepage"
-        Log.i(DEV, "Fetching videos..")
+        
         val elements = document.select("div#video-list > div.video-item")
             .mapNotNull {
                 val firstA = it.selectFirst("a")
-                val link = fixUrlNull(firstA?.attr("href")) ?: return@mapNotNull null
+                val link = fixUrl(firstA?.attr("href"))
                 val img = it.selectFirst("img")?.attr("data-original")
                 val name = it.selectFirst("div.video-name")?.text() ?: it.text()
-                Log.i(DEV, "Result => $link")
+                
                 newMovieSearchResponse(
                     name = name,
                     url = link,
                     type = globaltvType,
                 ) {
-                    //this.apiName = apiName
                     this.posterUrl = img
                 }
             }.distinctBy { it.url }
 
         if (elements.isNotEmpty()) {
-            all.add(
-                HomePageList(
-                    title, elements
-                )
-            )
+            all.add(HomePageList(title, elements))
         }
         return newHomePageResponse(all)
     }
@@ -80,42 +65,34 @@ class Vlxx : MainAPI() {
         return getPage("$mainUrl/search/${query}/", mainUrl).document
             .select("#container .box .video-list")
             .mapNotNull {
-            val link = fixUrlNull(it.select("a").attr("href")) ?: return@mapNotNull null
-            val imgArticle = it.select(".video-image").attr("src")
-            val name = it.selectFirst(".video-name")?.text() ?: ""
-            val year = null
+                val link = fixUrl(it.select("a").attr("href"))
+                val imgArticle = it.select(".video-image").attr("src")
+                val name = it.selectFirst(".video-name")?.text() ?: ""
 
-            newMovieSearchResponse(
-                name = name,
-                url = link,
-                type = globaltvType,
-            ) {
-                //this.apiName = apiName
-                this.posterUrl = imgArticle
-                this.year = year
-                this.posterHeaders = interceptor.getCookieHeaders(url).toMap()
-            }
-        }.distinctBy { it.url }
+                newMovieSearchResponse(
+                    name = name,
+                    url = link,
+                    type = globaltvType,
+                ) {
+                    this.posterUrl = imgArticle
+                    this.posterHeaders = interceptor.getCookieHeaders(url).toMap()
+                }
+            }.distinctBy { it.url }
     }
 
     override suspend fun load(url: String): LoadResponse {
-        val apiName = this.name
         val doc = getPage(url, url).document
-
         val container = doc.selectFirst("div#container")
         val title = container?.selectFirst("h2")?.text() ?: "No Title"
         val descript = container?.selectFirst("div.video-description")?.text()
-        val year = null
-        val poster = null //No image on load page
+        
         return newMovieLoadResponse(
             name = title,
             url = url,
             dataUrl = url,
             type = globaltvType,
         ) {
-            this.apiName = apiName
-            this.posterUrl = poster
-            this.year = year
+            this.posterUrl = null
             this.plot = descript
             this.posterHeaders = interceptor.getCookieHeaders(url).toMap()
         }
@@ -128,37 +105,34 @@ class Vlxx : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val pathSplits = data.split("/")
+        if (pathSplits.size < 2) return false
         val id = pathSplits[pathSplits.size - 2]
-        Log.i(DEV, "Data -> ${data} id -> ${id}")
+        
         val res = app.post(
             "${mainUrl}/ajax.php",
             headers = interceptor.getCookieHeaders(data).toMap(),
             data = mapOf(
-                Pair("vlxx_server", "1"),
-                Pair("id", id),
-                Pair("server", "1"),
+                "vlxx_server" to "1",
+                "id" to id,
+                "server" to "1",
             ),
             referer = mainUrl
         ).text
-        Log.i(DEV, "res ${res}")
 
         val json = getParamFromJS(res, "var opts = {\\r\\n\\t\\t\\t\\t\\t\\tsources:", "}]")
-        Log.i(DEV, "json ${json}")
         json?.let {
             tryParseJson<List<Sources?>>(it)?.forEach { vidlink ->
                 vidlink?.file?.let { file ->
-                    val extractorLinkType = if (file.endsWith("m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
                     try {
                         callback.invoke(
-                            newExtractorLink(
-                                source = file,
+                            ExtractorLink(
+                                source = this.name,
                                 name = this.name,
                                 url = file,
-                                type = extractorLinkType
-                            ).apply {
-                                this.referer = data
-                                this.quality = getQualityFromName(vidlink.label)
-                            }
+                                referer = data,
+                                quality = getQualityFromName(vidlink.label),
+                                isM3u8 = file.endsWith("m3u8")
+                            )
                         )
                     } catch (e: Exception) {
                         logError(e)
@@ -167,29 +141,24 @@ class Vlxx : MainAPI() {
             }
         }
         return true
-
     }
 
     private fun getParamFromJS(str: String, key: String, keyEnd: String): String? {
-        try {
-            val firstIndex = str.indexOf(key) + key.length // 4 to index point to first char.
+        return try {
+            val firstIndex = str.indexOf(key) + key.length
             val temp = str.substring(firstIndex)
             val lastIndex = temp.indexOf(keyEnd) + (keyEnd.length)
-            val jsonConfig = temp.substring(0, lastIndex) //
-            Log.i(DEV, "jsonConfig ${jsonConfig}")
+            val jsonConfig = temp.substring(0, lastIndex)
 
-            val re = jsonConfig.replace("\\r", "")
+            jsonConfig.replace("\\r", "")
                 .replace("\\t", "")
                 .replace("\\\"", "\"")
                 .replace("\\\\\\/", "/")
                 .replace("\\n", "")
-
-            return re
         } catch (e: Exception) {
-            //e.printStackTrace()
             logError(e)
+            null
         }
-        return null
     }
 
     data class Sources(
