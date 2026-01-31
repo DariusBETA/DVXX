@@ -27,19 +27,14 @@ class Vlxx : MainAPI() {
     override var lang = "en"
     override val hasQuickSearch = false
     override val supportedTypes = setOf(TvType.NSFW)
-    
-    private suspend fun getPage(url: String, referer: String): NiceResponse {
-        var count = 0
-        var resp = app.get(url, referer = referer, interceptor = interceptor)
-        Log.i(DEV, "Page Response => ${resp}")
-//        while (!resp.isSuccessful) {
-//            resp = app.get(url, interceptor = interceptor)
-//            count++
-//            if (count > 4) {
-//                return resp
-//            }
-//        }
-        return resp
+
+    private fun Element.toMainPageResult(): SearchResponse? {
+        val title = this.selectFirst("div.data h3 a")?.text() ?: return null
+        val href = fixUrlNull(this.selectFirst("a")?.attr("href")) ?: return null
+        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("src"))
+        return newMovieSearchResponse(title, href, TvType.NSFW) {
+            this.posterUrl = posterUrl
+        }
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
@@ -49,15 +44,6 @@ class Vlxx : MainAPI() {
             it.toMainPageResult()
         }
         return newHomePageResponse(request.name, home)
-    }
-
-    private fun Element.toMainPageResult(): SearchResponse? {
-        val title = this.selectFirst("div.data h3 a")?.text() ?: return null
-        val href = fixUrlNull(this.selectFirst("a")?.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("src"))
-        return newMovieSearchResponse(title, href, TvType.NSFW) {
-            this.posterUrl = posterUrl
-        }
     }
 
     override suspend fun search(query: String, page: Int): SearchResponseList {
@@ -88,8 +74,7 @@ class Vlxx : MainAPI() {
         }
     }
 
-    override suspend fun quickSearch(query: String): List<SearchResponse>? = search(query)
-
+    override suspend fun quickSearch(query: String): List<SearchResponse>? = search(query, 1)
 
     override suspend fun load(url: String): LoadResponse {
         val document = app.get(url).document
@@ -121,7 +106,12 @@ class Vlxx : MainAPI() {
         val watchBtn = document.selectFirst("div.sgeneros a")?.attr("href")
 
         return if (episodes.isNotEmpty()) {
-            newTvSeriesLoadResponse(title, url, TvType.NSFW, episodes) {
+            newTvSeriesLoadResponse(
+                name = title,
+                url = url,
+                type = TvType.NSFW,
+                episodes = episodes
+            ) {
                 this.posterUrl = poster
                 this.backgroundPosterUrl = banner
                 this.plot = description
@@ -129,7 +119,12 @@ class Vlxx : MainAPI() {
             }
         } else if (watchBtn != null) {
             val fullUrl = fixUrl(watchBtn)
-            newMovieLoadResponse(title, url, TvType.NSFW, fullUrl) {
+            newMovieLoadResponse(
+                name = title,
+                url = url,
+                type = TvType.NSFW,
+                dataUrl = fullUrl
+            ) {
                 this.posterUrl = poster
                 this.backgroundPosterUrl = banner
                 this.plot = description
@@ -138,7 +133,12 @@ class Vlxx : MainAPI() {
         } else {
             val movieSlug = url.trimEnd('/').substringAfterLast("/")
             val constructedUrl = "$mainUrl/watch-$movieSlug?sv=1&ep=1"
-            newMovieLoadResponse(title, url, TvType.NSFW, constructedUrl) {
+            newMovieLoadResponse(
+                name = title,
+                url = url,
+                type = TvType.NSFW,
+                dataUrl = constructedUrl
+            ) {
                 this.posterUrl = poster
                 this.backgroundPosterUrl = banner
                 this.plot = description
@@ -158,16 +158,20 @@ class Vlxx : MainAPI() {
             .getMethod("currentApplication")
             .invoke(null) as? Context ?: return false
 
-        val capturedUrl = suspendCancellableCoroutine { cont ->
+        val capturedUrl = suspendCancellableCoroutine<String?> { cont ->
             Handler(Looper.getMainLooper()).post {
                 val webView = WebView(context).apply {
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
-                    settings.userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+                    settings.userAgentString =
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
                 }
 
                 webView.webViewClient = object : WebViewClient() {
-                    override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                    override fun shouldInterceptRequest(
+                        view: WebView,
+                        request: WebResourceRequest
+                    ): WebResourceResponse? {
                         val url = request.url.toString()
                         if (url.contains(".m3u8") && cont.isActive) {
                             cont.resume(url)
@@ -177,12 +181,14 @@ class Vlxx : MainAPI() {
                     }
 
                     override fun onPageFinished(view: WebView, url: String?) {
-                        view.evaluateJavascript("""
-                        setInterval(() => {
-                            if (typeof jwplayer === 'function') jwplayer().play();
-                            document.querySelector('.jw-display-icon-display, .videoapi-btn')?.click();
-                        }, 1000);
-                    """.trimIndent(), null)
+                        view.evaluateJavascript(
+                            """
+                            setInterval(() => {
+                                if (typeof jwplayer === 'function') jwplayer().play();
+                                document.querySelector('.jw-display-icon-display, .videoapi-btn')?.click();
+                            }, 1000);
+                        """.trimIndent(), null
+                        )
                     }
                 }
 
@@ -197,15 +203,19 @@ class Vlxx : MainAPI() {
             }
         }
 
-        return capturedUrl?.let {
+        return capturedUrl?.let { found ->
+            // Build ExtractorLink using new API: pass fields directly
             callback.invoke(
-                newExtractorLink(this.name, this.name, it) {
-                    this.referer = "https://pinkueiga.net/"
-                    this.type = ExtractorLinkType.M3U8
-                    this.quality = Qualities.P720.value
-                }
+                newExtractorLink(
+                    source = this.name,
+                    name = this.name,
+                    url = found,
+                    quality = 720,
+                    isM3u8 = true,
+                    headers = mapOf("Referer" to "https://pinkueiga.net/")
+                )
             )
-            return true
+            true
         } ?: false
     }
 }
