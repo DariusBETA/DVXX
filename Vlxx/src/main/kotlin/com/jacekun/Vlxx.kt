@@ -121,7 +121,7 @@ class Vlxx : MainAPI() {
         val watchBtn = document.selectFirst("div.sgeneros a")?.attr("href")
 
         return if (episodes.isNotEmpty()) {
-            newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
+            newTvSeriesLoadResponse(title, url, TvType.NSFW, episodes) {
                 this.posterUrl = poster
                 this.backgroundPosterUrl = banner
                 this.plot = description
@@ -129,7 +129,7 @@ class Vlxx : MainAPI() {
             }
         } else if (watchBtn != null) {
             val fullUrl = fixUrl(watchBtn)
-            newMovieLoadResponse(title, url, TvType.Movie, fullUrl) {
+            newMovieLoadResponse(title, url, TvType.NSFW, fullUrl) {
                 this.posterUrl = poster
                 this.backgroundPosterUrl = banner
                 this.plot = description
@@ -138,7 +138,7 @@ class Vlxx : MainAPI() {
         } else {
             val movieSlug = url.trimEnd('/').substringAfterLast("/")
             val constructedUrl = "$mainUrl/watch-$movieSlug?sv=1&ep=1"
-            newMovieLoadResponse(title, url, TvType.Movie, constructedUrl) {
+            newMovieLoadResponse(title, url, TvType.NSFW, constructedUrl) {
                 this.posterUrl = poster
                 this.backgroundPosterUrl = banner
                 this.plot = description
