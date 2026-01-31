@@ -132,9 +132,9 @@ class Vlxx : MainAPI() {
             "${mainUrl}/ajax.php",
             headers = interceptor.getCookieHeaders(data).toMap(),
             data = mapOf(
-                Pair("vlxx_server", "1"),
-                Pair("id", id),
-                Pair("server", "1"),
+                "vlxx_server" to "1",
+                "id" to id,
+                "server" to "1",
             ),
             referer = mainUrl
         ).text
@@ -142,38 +142,40 @@ class Vlxx : MainAPI() {
 
         val json = getParamFromJS(res, "var opts = {\\r\\n\\t\\t\\t\\t\\t\\tsources:", "}]")
         Log.i(DEV, "json ${json}")
-        json?.let {
-            tryParseJson<List<Sources?>>(it)?.forEach { vidlink ->
-                vidlink?.file?.let { file ->
-                    val extractorLinkType = if (file.endsWith("m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+        
+        if (json != null) {
+            val sources = AppUtils.tryParseJson<List<Sources>>(json)
+            
+            sources?.forEach { vidlink ->
+                val fileUrl = vidlink.file
+                val label = vidlink.label ?: "Unknown"
+
+                if (fileUrl != null) {
                     try {
-                        callback.invoke(
-                            newExtractorLink(
-                                source = file,
-                                name = this.name,
-                                url = file,
-                                type = extractorLinkType
-                            ).apply {
-                                this.referer = data
-                                this.quality = getQualityFromName(vidlink.label)
-                            }
+                        val link = ExtractorLink(
+                            source = this.name,
+                            name = this.name,
+                            url = fileUrl,
+                            referer = data,
+                            quality = Qualities.getQualityFromName(label), 
+                            isM3u8 = fileUrl.endsWith("m3u8")
                         )
+                        callback.invoke(link)
                     } catch (e: Exception) {
-                        logError(e)
+                        AppUtils.logError(e)
                     }
                 }
             }
         }
         return true
-
     }
 
     private fun getParamFromJS(str: String, key: String, keyEnd: String): String? {
         try {
-            val firstIndex = str.indexOf(key) + key.length // 4 to index point to first char.
+            val firstIndex = str.indexOf(key) + key.length
             val temp = str.substring(firstIndex)
             val lastIndex = temp.indexOf(keyEnd) + (keyEnd.length)
-            val jsonConfig = temp.substring(0, lastIndex) //
+            val jsonConfig = temp.substring(0, lastIndex)
             Log.i(DEV, "jsonConfig ${jsonConfig}")
 
             val re = jsonConfig.replace("\\r", "")
@@ -184,8 +186,7 @@ class Vlxx : MainAPI() {
 
             return re
         } catch (e: Exception) {
-            //e.printStackTrace()
-            logError(e)
+            AppUtils.logError(e)
         }
         return null
     }
