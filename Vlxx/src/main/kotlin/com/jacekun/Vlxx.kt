@@ -11,6 +11,7 @@ import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.getQualityFromName
+import com.lagradost.cloudstream3.utils.newExtractorLink
 import com.lagradost.nicehttp.NiceResponse
 
 class Vlxx : MainAPI() {
@@ -148,14 +149,15 @@ class Vlxx : MainAPI() {
                         
                         try {
                             callback.invoke(
-                                ExtractorLink(
+                                newExtractorLink(
                                     source = this.name,
                                     name = this.name,
                                     url = file,
-                                    referer = data,
-                                    quality = getQualityFromName(vidlink.label),
                                     type = extractorLinkType
-                                )
+                                ).apply {
+                                    this.referer = data
+                                    this.quality = getQualityFromName(vidlink.label)
+                                }
                             )
                         } catch (e: Exception) {
                             logError(e)
