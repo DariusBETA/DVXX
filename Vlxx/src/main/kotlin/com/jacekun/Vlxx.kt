@@ -28,7 +28,6 @@ class Vlxx : MainAPI() {
 
     private suspend fun getPage(url: String, referer: String): NiceResponse {
         val resp = app.get(url, referer = referer, interceptor = interceptor)
-        Log.i(DEV, "Page Response Code => ${resp.code}")
         return resp
     }
 
@@ -39,9 +38,7 @@ class Vlxx : MainAPI() {
         val document = getPage(mainUrl, mainUrl).document
         val all = ArrayList<HomePageList>()
         
-        Log.i(DEV, "Fetching homepage videos...")
-        
-        var elements = document.select("div#video-list > div.video-item")
+        val elements = document.select("div#video-list > div.video-item")
             .mapNotNull {
                 val firstA = it.selectFirst("a")
                 val link = fixUrlNull(firstA?.attr("href")) ?: return@mapNotNull null
@@ -50,7 +47,6 @@ class Vlxx : MainAPI() {
                 val name = it.selectFirst("div.video-name")?.text() 
                     ?: it.selectFirst("a")?.attr("title") 
                     ?: it.text()
-                Log.i(DEV, "Homepage item => $name | $link")
                 newMovieSearchResponse(
                     name = name,
                     url = link,
@@ -61,8 +57,7 @@ class Vlxx : MainAPI() {
             }.distinctBy { it.url }
 
         if (elements.isEmpty()) {
-            Log.i(DEV, "First selector empty, trying alternative...")
-            elements = document.select("div.video-item")
+            val altElements = document.select("div.video-item")
                 .mapNotNull {
                     val link = fixUrlNull(it.selectFirst("a")?.attr("href")) ?: return@mapNotNull null
                     val img = it.selectFirst("img")?.attr("data-original") 
@@ -70,7 +65,6 @@ class Vlxx : MainAPI() {
                     val name = it.selectFirst(".video-name")?.text() 
                         ?: it.selectFirst("a")?.attr("title") 
                         ?: "Video"
-                    Log.i(DEV, "Alt homepage item => $name | $link")
                     newMovieSearchResponse(
                         name = name,
                         url = link,
@@ -79,23 +73,21 @@ class Vlxx : MainAPI() {
                         this.posterUrl = img
                     }
                 }.distinctBy { it.url }
-        }
-
-        if (elements.isNotEmpty()) {
+            if (altElements.isNotEmpty()) {
+                all.add(HomePageList("Homepage", altElements))
+            }
+        } else {
             all.add(HomePageList("Homepage", elements))
         }
         
-        Log.i(DEV, "Total homepage items: ${elements.size}")
         return newHomePageResponse(all)
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
         val searchUrl = "$mainUrl/search/${query}/"
-        Log.i(DEV, "Search URL: $searchUrl")
-        
         val document = getPage(searchUrl, mainUrl).document
         
-        var results = document.select(".video-list .video-item")
+        return document.select(".video-list .video-item, div.video-item")
             .mapNotNull {
                 val link = fixUrlNull(it.selectFirst("a")?.attr("href")) ?: return@mapNotNull null
                 val img = it.selectFirst("img")?.attr("data-original") 
@@ -103,7 +95,6 @@ class Vlxx : MainAPI() {
                 val name = it.selectFirst(".video-name")?.text() 
                     ?: it.selectFirst("a")?.attr("title") 
                     ?: ""
-                Log.i(DEV, "Search result => $name | $link")
                 newMovieSearchResponse(
                     name = name,
                     url = link,
@@ -113,36 +104,10 @@ class Vlxx : MainAPI() {
                     this.posterHeaders = interceptor.getCookieHeaders(searchUrl).toMap()
                 }
             }.distinctBy { it.url }
-
-        if (results.isEmpty()) {
-            Log.i(DEV, "First search selector empty, trying alternative...")
-            results = document.select("div.video-item")
-                .mapNotNull {
-                    val link = fixUrlNull(it.selectFirst("a")?.attr("href")) ?: return@mapNotNull null
-                    val img = it.selectFirst("img")?.attr("data-original") 
-                        ?: it.selectFirst("img")?.attr("src")
-                    val name = it.selectFirst(".video-name")?.text() 
-                        ?: it.selectFirst("a")?.attr("title") 
-                        ?: ""
-                    Log.i(DEV, "Alt search result => $name | $link")
-                    newMovieSearchResponse(
-                        name = name,
-                        url = link,
-                        type = globaltvType,
-                    ) {
-                        this.posterUrl = img
-                        this.posterHeaders = interceptor.getCookieHeaders(searchUrl).toMap()
-                    }
-                }.distinctBy { it.url }
-        }
-        
-        Log.i(DEV, "Total search results: ${results.size}")
-        return results
     }
 
     override suspend fun load(url: String): LoadResponse {
         val doc = getPage(url, url).document
-        Log.i(DEV, "Loading page: $url")
 
         val container = doc.selectFirst("div#container")
         val title = container?.selectFirst("h2")?.text() 
@@ -151,8 +116,6 @@ class Vlxx : MainAPI() {
         val descript = container?.selectFirst("div.video-description")?.text()
         val poster = doc.selectFirst("meta[property=og:image]")?.attr("content")
             ?: doc.selectFirst("video")?.attr("poster")
-        
-        Log.i(DEV, "Loaded: $title")
         
         return newMovieLoadResponse(
             name = title,
@@ -173,73 +136,106 @@ class Vlxx : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         try {
-            Log.i(DEV, "Loading links for: $data")
+            Log.d(DEV, "=== LOADING LINKS ===")
+            Log.d(DEV, "Full URL: $data")
             
-            val pathSplits = data.split("/").filter { it.isNotEmpty() }
-            val id = pathSplits.lastOrNull() ?: return false
-            Log.i(DEV, "Extracted ID: $id")
+            // Try multiple ways to extract ID
+            val urlParts = data.trimEnd('/').split("/")
+            Log.d(DEV, "URL parts: $urlParts")
             
-            val cookies = interceptor.getCookieHeaders(data).toMap()
+            // Method 1: Get last part (slug)
+            val slug = urlParts.lastOrNull { it.isNotEmpty() } ?: ""
+            Log.d(DEV, "Slug: $slug")
             
-            val headers = cookies.toMutableMap()
-            headers["X-Requested-With"] = "XMLHttpRequest"
+            // Method 2: Get second to last (if last is empty from trailing slash)
+            val id2 = if (urlParts.size >= 2) urlParts[urlParts.size - 2] else slug
+            Log.d(DEV, "ID attempt 2: $id2")
             
-            val res = app.post(
-                "$mainUrl/ajax.php",
-                headers = headers,
-                data = mapOf(
+            // Try both IDs
+            val idsToTry = listOf(slug, id2).distinct().filter { it.isNotEmpty() }
+            
+            for (id in idsToTry) {
+                Log.d(DEV, "Trying ID: $id")
+                
+                val cookies = interceptor.getCookieHeaders(data).toMap()
+                val headers = cookies.toMutableMap()
+                headers["X-Requested-With"] = "XMLHttpRequest"
+                
+                val postData = mapOf(
                     "vlxx_server" to "1",
                     "id" to id,
                     "server" to "1"
-                ),
-                referer = data
-            ).text
-            
-            Log.i(DEV, "Ajax response length: ${res.length}")
-            Log.i(DEV, "Ajax response preview: ${res.take(500)}")
-
-            var foundLinks = false
-            
-            // Method 1: Parse sources JSON
-            val patterns = listOf(
-                "sources:" to "}]",
-                "sources: " to "}]",
-                "\"sources\":" to "}]",
-                "'sources':" to "}]"
-            )
-            
-            for ((key, end) in patterns) {
-                val json = getParamFromJS(res, key, end)
-                if (json != null) {
-                    Log.i(DEV, "Found JSON with pattern '$key': $json")
-                    tryParseJson<List<Sources?>>(json)?.forEach { vidlink ->
-                        vidlink?.file?.let { file ->
-                            Log.i(DEV, "Parsed link: $file")
-                            callback.invoke(
-                                newExtractorLink(
-                                    source = this.name,
-                                    name = this.name,
-                                    url = file,
-                                    type = if (file.endsWith("m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                                ).apply {
-                                    this.referer = data
-                                    this.quality = getQualityFromName(vidlink.label)
-                                }
-                            )
-                            foundLinks = true
+                )
+                Log.d(DEV, "POST data: $postData")
+                
+                val res = app.post(
+                    "$mainUrl/ajax.php",
+                    headers = headers,
+                    data = postData,
+                    referer = data
+                ).text
+                
+                Log.d(DEV, "Response length: ${res.length}")
+                Log.d(DEV, "Response: $res")
+                
+                if (res.isBlank() || res.length < 10) {
+                    Log.w(DEV, "Response too short, trying next ID")
+                    continue
+                }
+                
+                // Try to find video sources
+                var foundLinks = false
+                
+                // Pattern 1: Standard JSON sources
+                val patterns = listOf(
+                    "sources:[" to "]",
+                    "sources: [" to "]",
+                    "\"sources\":[" to "]",
+                    "'sources':[" to "]",
+                    "sources:" to "}]"
+                )
+                
+                for ((key, end) in patterns) {
+                    val json = getParamFromJS(res, key, end)
+                    if (json != null && json.length > 5) {
+                        Log.d(DEV, "Pattern '$key' matched. JSON: $json")
+                        
+                        val sources = tryParseJson<List<Sources?>>(json)
+                        Log.d(DEV, "Parsed sources count: ${sources?.size}")
+                        
+                        sources?.forEach { vidlink ->
+                            val file = vidlink?.file
+                            if (!file.isNullOrBlank()) {
+                                Log.d(DEV, "Adding link: $file (${vidlink.label})")
+                                callback.invoke(
+                                    newExtractorLink(
+                                        source = this.name,
+                                        name = "${this.name} ${vidlink.label ?: ""}",
+                                        url = file,
+                                        type = if (file.endsWith("m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                                    ).apply {
+                                        this.referer = data
+                                        this.quality = getQualityFromName(vidlink.label)
+                                    }
+                                )
+                                foundLinks = true
+                            }
+                        }
+                        
+                        if (foundLinks) {
+                            Log.d(DEV, "Found links with JSON parsing")
+                            return true
                         }
                     }
-                    if (foundLinks) break
                 }
-            }
-            
-            // Method 2: Direct URL extraction
-            if (!foundLinks) {
-                Log.i(DEV, "JSON parse failed, trying direct URL extraction")
-                val urlPattern = Regex("(https?://[^\"'\\s]+\\.(m3u8|mp4)[^\"'\\s]*)")
-                urlPattern.findAll(res).forEach { match ->
+                
+                // Pattern 2: Direct URL in response
+                val urlRegex = Regex("(https?://[^\"'\\s]+\\.(?:m3u8|mp4)[^\"'\\s]*)")
+                val matches = urlRegex.findAll(res)
+                
+                matches.forEach { match ->
                     val url = match.groupValues[1]
-                    Log.i(DEV, "Found direct URL: $url")
+                    Log.d(DEV, "Found direct URL: $url")
                     callback.invoke(
                         newExtractorLink(
                             source = this.name,
@@ -252,17 +248,18 @@ class Vlxx : MainAPI() {
                     )
                     foundLinks = true
                 }
+                
+                if (foundLinks) {
+                    Log.d(DEV, "Found links with direct URL extraction")
+                    return true
+                }
             }
             
-            if (!foundLinks) {
-                Log.e(DEV, "No links found with any method")
-            }
-            
-            return foundLinks
+            Log.e(DEV, "No links found with any method or ID")
+            return false
             
         } catch (e: Exception) {
-            Log.e(DEV, "Error in loadLinks: ${e.message}")
-            e.printStackTrace()
+            Log.e(DEV, "Exception in loadLinks", e)
             logError(e)
             return false
         }
