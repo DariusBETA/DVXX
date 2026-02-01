@@ -14,6 +14,7 @@ import com.lagradost.cloudstream3.utils.getQualityFromName
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import com.lagradost.nicehttp.NiceResponse
 
+
 class Vlxx : MainAPI() {
     private val DEV = "DevDebug"
     private val globaltvType = TvType.NSFW
