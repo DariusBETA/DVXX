@@ -223,57 +223,54 @@ class Vlxx : MainAPI() {
                         }
                         
                         Log.d(DEV, "Added $added links")
-                        return added > 0
-                        
-                    } catch (e: Exception) {
-                        Log.e(DEV, "Error parsing JSON", e)
-                    }
-                } else {
-                    Log.d(DEV, "Regex did not match")
+                    if (added > 0) return true 
+
+                } catch (e: Exception) {
+                    Log.e(DEV, "Error parsing JSON", e)
                 }
             } else {
-                Log.d(DEV, "Response does not contain 'sources'")
+                Log.d(DEV, "Regex did not match")
             }
-            
-            Log.d(DEV, "Trying fallback URL extraction")
-            val urlRegex = Regex("(https?://[^\\s\"'<>]+\\.m3u8[^\\s\"'<>]*)")
-            val urls = urlRegex.findAll(responseText)
-            
-            var count = 0
-            urls.forEach { urlMatch ->
-                val videoUrl = urlMatch.groupValues[1]
-                Log.d(DEV, "Fallback found: $videoUrl")
-                try {
-                    callback.invoke(
-                        newExtractorLink(
-                            source = name,
-                            name = name,
-                            url = videoUrl,
-                            type = ExtractorLinkType.M3U8
-                        ).apply {
-                            referer = cleanData
-                        }
-                    )
-                    count++
-                } catch (e: Exception) {
-                    Log.e(DEV, "Error adding fallback link", e)
-                }
-            }
-            
-            Log.d(DEV, "Fallback added $count links")
-            return count > 0
-            
-        } catch (e: Exception) {
-            Log.e(DEV, "MAIN EXCEPTION in loadLinks", e)
-            e.printStackTrace()
-            logError(e)
-            false
+        } else {
+            Log.d(DEV, "Response does not contain 'sources'")
         }
-    }
+        
+        Log.d(DEV, "Trying fallback URL extraction")
+        val urlRegex = Regex("(https?://[^\\s\"'<>]+\\.m3u8[^\\s\"'<>]*)")
+        val urls = urlRegex.findAll(responseText)
+        
+        var count = 0
+        urls.forEach { urlMatch ->
+            val videoUrl = urlMatch.groupValues[1]
+            Log.d(DEV, "Fallback found: $videoUrl")
+            try {
+                callback.invoke(
+                    newExtractorLink(
+                        source = name,
+                        name = name,
+                        url = videoUrl,
+                        type = ExtractorLinkType.M3U8
+                    ).apply {
+                        referer = cleanData
+                    }
+                )
+                count++
+            } catch (e: Exception) {
+                Log.e(DEV, "Error adding fallback link", e)
+            }
+        }
+        
+        return count > 0
 
+    } catch (e: Exception) {
+        Log.e(DEV, "MAIN EXCEPTION in loadLinks", e)
+        false
+    }
+}
     data class Sources(
         @JsonProperty("file") val file: String? = null,
         @JsonProperty("type") val type: String? = null,
         @JsonProperty("label") val label: String? = null
     )
 }
+
