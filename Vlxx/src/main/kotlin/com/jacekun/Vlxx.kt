@@ -1,144 +1,123 @@
-package com.byayzen
+package com.jacekun
 
+import com.lagradost.cloudstream3.MainAPI
+import com.lagradost.cloudstream3.TvType
+import android.util.Log
+import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.*
-import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
-import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
-import com.lagradost.cloudstream3.utils.*
-import org.jsoup.nodes.Element
+import com.lagradost.cloudstream3.mvvm.logError
+import com.lagradost.cloudstream3.network.CloudflareKiller
+import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
+import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.getQualityFromName
+import com.lagradost.cloudstream3.utils.newExtractorLink
+import com.lagradost.nicehttp.NiceResponse
 
-class xVideos : MainAPI() {
-    override var mainUrl = "https://www.vlxx.ms"
+class Vlxx : MainAPI() {
+    private val DEV = "DevDebug"
+    private val globaltvType = TvType.NSFW
+
     override var name = "Vlxx"
-    override val hasMainPage = true
-    override var lang = "en"
+    override var mainUrl = "https://vlxx.sex"
     override val supportedTypes = setOf(TvType.NSFW)
+    override val hasDownloadSupport = false
+    override val hasMainPage = true
+    override val hasQuickSearch = false
+    private val interceptor = CloudflareKiller()
 
-    private fun String.fixUrl(): String {
-        return when {
-            startsWith("//") -> "https:$this"
-            startsWith("/") -> "$mainUrl$this"
-            else -> this
-        }
+    private suspend fun getPage(url: String, referer: String): NiceResponse {
+        var count = 0
+        var resp = app.get(url, referer = referer, interceptor = interceptor)
+        Log.i(DEV, "Page Response => ${resp}")
+//        while (!resp.isSuccessful) {
+//            resp = app.get(url, interceptor = interceptor)
+//            count++
+//            if (count > 4) {
+//                return resp
+//            }
+//        }
+        return resp
     }
 
-    private fun Element.toSearchResponse(): SearchResponse? {
-        val titleElement = this.selectFirst("p.title a") ?: return null
-        val title = titleElement.attr("title").ifBlank { titleElement.text() }
-        val originalHref = titleElement.attr("href") ?: return null
+    override suspend fun getMainPage(
+        page: Int,
+        request: MainPageRequest
+    ): HomePageResponse {
+        val apiName = this.name
+        val document = getPage(mainUrl, mainUrl).document
+        val all = ArrayList<HomePageList>()
+        val title = "Homepage"
+        Log.i(DEV, "Fetching videos..")
+        val elements = document.select("div#video-list > div.video-item")
+            .mapNotNull {
+                val firstA = it.selectFirst("a")
+                val link = fixUrlNull(firstA?.attr("href")) ?: return@mapNotNull null
+                val img = it.selectFirst("img")?.attr("data-original")
+                val name = it.selectFirst("div.video-name")?.text() ?: it.text()
+                Log.i(DEV, "Result => $link")
+                newMovieSearchResponse(
+                    name = name,
+                    url = link,
+                    type = globaltvType,
+                ) {
+                    //this.apiName = apiName
+                    this.posterUrl = img
+                }
+            }.distinctBy { it.url }
 
-        val urlCleanRegex = Regex("^(/video\\.[^/]+)/[^/]+/[^/]+/(.+)$")
-        val matchResult = urlCleanRegex.find(originalHref)
-
-        val cleanedHref = if (matchResult != null && matchResult.groupValues.size == 3) {
-            "${matchResult.groupValues[1]}/${matchResult.groupValues[2]}"
-        } else {
-            originalHref
+        if (elements.isNotEmpty()) {
+            all.add(
+                HomePageList(
+                    title, elements
+                )
+            )
         }
-
-        val fullUrl = cleanedHref.fixUrl()
-        val imgTag = this.selectFirst("div.thumb a img")
-        val posterUrl = (imgTag?.attr("data-src")?.takeIf { it.isNotBlank() && !it.contains("lightbox-blank") }
-            ?: imgTag?.attr("src")?.takeIf { it.isNotBlank() && !it.contains("lightbox-blank") })?.fixUrl()
-
-        return newAnimeSearchResponse(title, fullUrl, TvType.NSFW) {
-            this.posterUrl = posterUrl
-            if (!posterUrl.isNullOrBlank()) {
-                this.posterHeaders = mapOf("Referer" to mainUrl)
-            }
-        }
-    }
-
-    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
-        val pageNumber = if (page > 1) "/new/${page - 1}" else ""
-        val document = app.get("$mainUrl$pageNumber").document
-        val items = document.select("div.mozaique div.thumb-block").mapNotNull { it.toSearchResponse() }
-
-        val homePages = mutableListOf(HomePageList("Videos", items))
-
-        val categories = listOf(
-            Pair("Amateur", "/c/Amateur-65"),
-            Pair("Anal", "/c/Anal-12"),
-            Pair("Big Tits", "/c/Big_Tits-23"),
-            Pair("Big Cock", "/c/Big_Cock-34"),
-            Pair("Big Ass", "/c/Big_Ass-24"),
-            Pair("Creampie", "/c/Creampie-40"),
-            Pair("Milf", "/c/Milf-19"),
-            Pair("Mature", "/c/Mature-38"),
-            Pair("Teen", "/c/Teen-13"),
-            Pair("Interracial", "/c/Interracial-27"),
-            Pair("Lesbian", "/c/Lesbian-26"),
-            Pair("Blowjob", "/c/Blowjob-15"),
-            Pair("Cumshot", "/c/Cumshot-18"),
-            Pair("Redhead", "/c/Redhead-31"),
-            Pair("Brunette", "/c/Brunette-25")
-        )
-
-        categories.forEach { (catName, catHref) ->
-            val catDocs = app.get("$mainUrl$catHref").document
-            val catItems = catDocs.select("div.mozaique div.thumb-block").take(10).mapNotNull { it.toSearchResponse() }
-            if (catItems.isNotEmpty()) {
-                homePages.add(HomePageList(catName, catItems))
-            }
-        }
-
-        val hasNextPage = document.selectFirst("div.pagination a.next-page") != null
-        return newHomePageResponse(homePages, hasNextPage)
+        return newHomePageResponse(all)
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        return app.get("$mainUrl/?k=$query").document
-            .select("div.mozaique div.thumb-block").mapNotNull { it.toSearchResponse() }
-    }
+        return getPage("$mainUrl/search/${query}/", mainUrl).document
+            .select("#container .box .video-list")
+            .mapNotNull {
+            val link = fixUrlNull(it.select("a").attr("href")) ?: return@mapNotNull null
+            val imgArticle = it.select(".video-image").attr("src")
+            val name = it.selectFirst(".video-name")?.text() ?: ""
+            val year = null
 
-    override suspend fun load(url: String): LoadResponse? {
-        val d = app.get(url).document
-        val title = d.selectFirst("h2.page-title")?.ownText()?.trim()
-            ?: d.selectFirst("meta[property=og:title]")?.attr("content") ?: return null
-
-        val poster = d.selectFirst("meta[property=og:image]")?.attr("content")?.fixUrl()
-        val description = d.selectFirst("meta[name=description]")?.attr("content")
-            ?: d.selectFirst("div.video-description-text")?.text()
-
-        val tags = d.select("div.video-tags-list li a.is-keyword").map { it.text() }.filter { it.isNotBlank() }
-        val uploaderName = d.selectFirst("li.main-uploader a.uploader-tag span.name")?.text()
-
-        val recs = mutableListOf<SearchResponse>()
-        val scriptContent = d.select("script").find { it.html().contains("var video_related") }?.html()
-        if (scriptContent != null) {
-            val itemRegex = Regex("""\{\s*"id":\s*\d+.*?,"u"\s*:\s*"(.*?)",\s*"i"\s*:\s*"(.*?)",.*?tf"\s*:\s*"(.*?)".*?\}""")
-            itemRegex.findAll(scriptContent).forEach { itemMatch ->
-                val recHref = itemMatch.groupValues[1].replace("\\/", "/").fixUrl()
-                val recImage = itemMatch.groupValues[2].replace("\\/", "/").fixUrl()
-                val recTitle = unescapeUnicode(itemMatch.groupValues[3].replace("\\/", "/"))
-
-                recs.add(newAnimeSearchResponse(recTitle, recHref, TvType.NSFW) {
-                    this.posterUrl = recImage
-                    if (!this.posterUrl.isNullOrBlank()) this.posterHeaders = mapOf("Referer" to mainUrl)
-                })
+            newMovieSearchResponse(
+                name = name,
+                url = link,
+                type = globaltvType,
+            ) {
+                //this.apiName = apiName
+                this.posterUrl = imgArticle
+                this.year = year
+                this.posterHeaders = interceptor.getCookieHeaders(url).toMap()
             }
-        }
+        }.distinctBy { it.url }
+    }
 
-        return newMovieLoadResponse(title, url, TvType.NSFW, url) {
+    override suspend fun load(url: String): LoadResponse {
+        val apiName = this.name
+        val doc = getPage(url, url).document
+
+        val container = doc.selectFirst("div#container")
+        val title = container?.selectFirst("h2")?.text() ?: "No Title"
+        val descript = container?.selectFirst("div.video-description")?.text()
+        val year = null
+        val poster = null //No image on load page
+        return newMovieLoadResponse(
+            name = title,
+            url = url,
+            dataUrl = url,
+            type = globaltvType,
+        ) {
+            this.apiName = apiName
             this.posterUrl = poster
-            if (!this.posterUrl.isNullOrBlank()) this.posterHeaders = mapOf("Referer" to mainUrl)
-            this.plot = description
-            this.tags = tags
-            this.recommendations = recs
-            this.duration = d.selectFirst("h2.page-title span.duration")?.text()?.let { parseDuration(it) }
-            uploaderName?.let { addActors(listOf(it)) }
-        }
-    }
-
-    private fun parseDuration(durationString: String): Int? {
-        var totalMinutes = 0
-        Regex("""(\d+)\s*h""").find(durationString)?.let { totalMinutes += it.groupValues[1].toInt() * 60 }
-        Regex("""(\d+)\s*min""").find(durationString)?.let { totalMinutes += it.groupValues[1].toInt() }
-        return if (totalMinutes > 0) totalMinutes else null
-    }
-
-    private fun unescapeUnicode(str: String): String {
-        return Regex("""\\u([0-9a-fA-F]{4})""").replace(str) {
-            it.groupValues[1].toInt(16).toChar().toString()
+            this.year = year
+            this.plot = descript
+            this.posterHeaders = interceptor.getCookieHeaders(url).toMap()
         }
     }
 
@@ -148,7 +127,74 @@ class xVideos : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        loadExtractor(data, subtitleCallback, callback)
+        val pathSplits = data.split("/")
+        val id = pathSplits[pathSplits.size - 2]
+        Log.i(DEV, "Data -> ${data} id -> ${id}")
+        val res = app.post(
+            "${mainUrl}/ajax.php",
+            headers = interceptor.getCookieHeaders(data).toMap(),
+            data = mapOf(
+                Pair("vlxx_server", "1"),
+                Pair("id", id),
+                Pair("server", "1"),
+            ),
+            referer = mainUrl
+        ).text
+        Log.i(DEV, "res ${res}")
+
+        val json = getParamFromJS(res, "var opts = {\\r\\n\\t\\t\\t\\t\\t\\tsources:", "}]")
+        Log.i(DEV, "json ${json}")
+        json?.let {
+            tryParseJson<List<Sources?>>(it)?.forEach { vidlink ->
+                vidlink?.file?.let { file ->
+                    val extractorLinkType = if (file.endsWith("m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                    try {
+                        callback.invoke(
+                            newExtractorLink(
+                                source = file,
+                                name = this.name,
+                                url = file,
+                                type = extractorLinkType
+                            ).apply {
+                                this.referer = data
+                                this.quality = getQualityFromName(vidlink.label)
+                            }
+                        )
+                    } catch (e: Exception) {
+                        logError(e)
+                    }
+                }
+            }
+        }
         return true
+
     }
+
+    private fun getParamFromJS(str: String, key: String, keyEnd: String): String? {
+        try {
+            val firstIndex = str.indexOf(key) + key.length // 4 to index point to first char.
+            val temp = str.substring(firstIndex)
+            val lastIndex = temp.indexOf(keyEnd) + (keyEnd.length)
+            val jsonConfig = temp.substring(0, lastIndex) //
+            Log.i(DEV, "jsonConfig ${jsonConfig}")
+
+            val re = jsonConfig.replace("\\r", "")
+                .replace("\\t", "")
+                .replace("\\\"", "\"")
+                .replace("\\\\\\/", "/")
+                .replace("\\n", "")
+
+            return re
+        } catch (e: Exception) {
+            //e.printStackTrace()
+            logError(e)
+        }
+        return null
+    }
+
+    data class Sources(
+        @JsonProperty("file") val file: String?,
+        @JsonProperty("type") val type: String?,
+        @JsonProperty("label") val label: String?
+    )
 }
