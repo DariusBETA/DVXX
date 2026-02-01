@@ -256,7 +256,7 @@ class Vlxx : MainAPI() {
             }
         }
         
-        count > 0
+        return count > 0  // ← Ajout du "return" ici
         
     } catch (e: Exception) {
         Log.e(DEV, "MAIN EXCEPTION in loadLinks", e)
