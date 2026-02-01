@@ -136,32 +136,67 @@ class Vlxx : MainAPI() {
             
             Log.i(DEV, "res $res")
 
-            val json = getParamFromJS(res, "var opts = {\\r\\n\\t\\t\\t\\t\\t\\tsources:", "}]")
+            // Try multiple parsing patterns
+            var json = getParamFromJS(res, "var opts = {\\r\\n\\t\\t\\t\\t\\t\\tsources:", "}]")
+            
+            if (json == null) {
+                json = getParamFromJS(res, "sources:", "}]")
+            }
+            
+            if (json == null) {
+                json = getParamFromJS(res, "sources: ", "}]")
+            }
+            
+            if (json == null) {
+                json = getParamFromJS(res, "\"sources\":", "}]")
+            }
+            
+            // Try to find any .m3u8 or .mp4 URLs directly in response
+            if (json == null) {
+                Log.e(DEV, "All patterns failed, trying direct URL extraction")
+                val urlPattern = Regex("(https?://[^\"'\\s]+\\.(m3u8|mp4)[^\"'\\s]*)")
+                val matches = urlPattern.findAll(res)
+                matches.forEach { match ->
+                    val url = match.groupValues[1]
+                    Log.i(DEV, "Found direct URL: $url")
+                    callback.invoke(
+                        newExtractorLink(
+                            source = this.name,
+                            name = this.name,
+                            url = url,
+                            type = if (url.contains("m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                        ).apply {
+                            this.referer = data
+                        }
+                    )
+                }
+                return matches.count() > 0
+            }
+            
             Log.i(DEV, "json $json")
             
-            json?.let {
-                tryParseJson<List<Sources?>>(it)?.forEach { vidlink ->
-                    vidlink?.file?.let { file ->
-                        val extractorLinkType = if (file.endsWith("m3u8")) 
-                            ExtractorLinkType.M3U8 
-                        else 
-                            ExtractorLinkType.VIDEO
-                        
-                        try {
-                            callback.invoke(
-                                newExtractorLink(
-                                    source = this.name,
-                                    name = this.name,
-                                    url = file,
-                                    type = extractorLinkType
-                                ).apply {
-                                    this.referer = data
-                                    this.quality = getQualityFromName(vidlink.label)
-                                }
-                            )
-                        } catch (e: Exception) {
-                            logError(e)
-                        }
+            tryParseJson<List<Sources?>>(json)?.forEach { vidlink ->
+                vidlink?.file?.let { file ->
+                    Log.i(DEV, "Found link: $file")
+                    val extractorLinkType = if (file.endsWith("m3u8")) 
+                        ExtractorLinkType.M3U8 
+                    else 
+                        ExtractorLinkType.VIDEO
+                    
+                    try {
+                        callback.invoke(
+                            newExtractorLink(
+                                source = this.name,
+                                name = this.name,
+                                url = file,
+                                type = extractorLinkType
+                            ).apply {
+                                this.referer = data
+                                this.quality = getQualityFromName(vidlink.label)
+                            }
+                        )
+                    } catch (e: Exception) {
+                        logError(e)
                     }
                 }
             }
