@@ -18,7 +18,7 @@ import kotlinx.coroutines.coroutineScope
 // Định nghĩa lớp Provider chính, kế thừa từ MainAPI
 class XnhauProvider : MainAPI() {
     // --- Thông tin cơ bản của Provider ---
-    override var mainUrl = "https://xnhau.hot"
+    override var mainUrl = "https://vlxx.ms"
     override var name = "xNhau"
     override val hasMainPage = true
     override var lang = "vi"
@@ -26,7 +26,7 @@ class XnhauProvider : MainAPI() {
     override val supportedTypes = setOf(
         TvType.NSFW
     )
-    private val storageUrl = "https://xnhaustorage.com" // Có thể dùng const val
+    private val storageUrl = "https://vlxx.com" // Có thể dùng const val
 
     // override val interceptor = CloudflareKiller() // Bỏ comment nếu trang web dùng Cloudflare
 
