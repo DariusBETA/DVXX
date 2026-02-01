@@ -252,7 +252,7 @@ class Vlxx : MainAPI() {
                         type = ExtractorLinkType.M3U8
                     ).apply {
                         referer = cleanData
-                    }
+                   }
                 )
                 count++
             } catch (e: Exception) {
@@ -267,6 +267,7 @@ class Vlxx : MainAPI() {
         false
     }
 }
+
     data class Sources(
         @JsonProperty("file") val file: String? = null,
         @JsonProperty("type") val type: String? = null,
