@@ -1,4 +1,4 @@
-package com.DariusBETA
+package com.jacekun
 
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.TvType
@@ -104,7 +104,8 @@ class Vlxx : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         return try {
-            // Nettoyer les données
+            Log.d(DEV, "=== ENTER loadLinks ===")
+            
             val cleanData = try {
                 data.replace(" ", "").replace("\n", "").replace("\r", "").trim()
             } catch (e: Exception) {
@@ -115,7 +116,6 @@ class Vlxx : MainAPI() {
             Log.d(DEV, "original: $data")
             Log.d(DEV, "cleaned: $cleanData")
             
-            // Extraire l'ID
             val pathSegments = try {
                 cleanData.trimEnd('/').split("/").filter { it.isNotEmpty() }
             } catch (e: Exception) {
@@ -136,15 +136,19 @@ class Vlxx : MainAPI() {
             val postUrl = "$mainUrl/ajax.php"
             Log.d(DEV, "Posting to: $postUrl")
             
-            val postData = mapOf(
-                "vlxx_server" to "1",
-                "id" to id,
-                "server" to "1"
-            )
+            val postData = try {
+                mapOf(
+                    "vlxx_server" to "1",
+                    "id" to id,
+                    "server" to "1"
+                )
+            } catch (e: Exception) {
+                Log.e(DEV, "Error creating post data", e)
+                return false
+            }
             
             Log.d(DEV, "postData: $postData")
             
-            // Requête POST
             val response = try {
                 app.post(
                     url = postUrl,
@@ -173,7 +177,7 @@ class Vlxx : MainAPI() {
                 return false
             }
             
-            // Parser les sources
+            // Try simple pattern first
             if (responseText.contains("sources")) {
                 Log.d(DEV, "Response contains 'sources'")
                 
@@ -201,8 +205,8 @@ class Vlxx : MainAPI() {
                                             url = fileUrl,
                                             type = if (fileUrl.contains("m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
                                         ).apply {
-                                            this.referer = cleanData
-                                            this.quality = getQualityFromName(source.label ?: "")
+                                            referer = cleanData
+                                            quality = getQualityFromName(source.label)
                                         }
                                     )
                                     added++
@@ -213,7 +217,7 @@ class Vlxx : MainAPI() {
                         }
                         
                         Log.d(DEV, "Added $added links")
-                        if (added > 0) return true
+                        return added > 0
                         
                     } catch (e: Exception) {
                         Log.e(DEV, "Error parsing JSON", e)
@@ -242,7 +246,7 @@ class Vlxx : MainAPI() {
                             url = videoUrl,
                             type = ExtractorLinkType.M3U8
                         ).apply {
-                            this.referer = cleanData
+                            referer = cleanData
                         }
                     )
                     count++
@@ -251,10 +255,13 @@ class Vlxx : MainAPI() {
                 }
             }
             
+            Log.d(DEV, "Fallback added $count links")
             return count > 0
             
         } catch (e: Exception) {
             Log.e(DEV, "MAIN EXCEPTION in loadLinks", e)
+            e.printStackTrace()
+            logError(e)
             false
         }
     }
