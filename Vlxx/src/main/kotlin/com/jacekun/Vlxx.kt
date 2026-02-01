@@ -123,11 +123,9 @@ class Vlxx : MainAPI() {
             Log.i(DEV, "Data -> $data")
             Log.i(DEV, "ID -> $id")
             
-            // Lấy cookies
             val cookies = interceptor.getCookieHeaders(data).toMap()
             Log.i(DEV, "Cookies: $cookies")
             
-            // Gửi POST request
             val res = app.post(
                 "$mainUrl/ajax.php",
                 headers = cookies,
@@ -139,40 +137,23 @@ class Vlxx : MainAPI() {
                 referer = data
             ).text
             
-            Log.i(DEV, "Response từ ajax: $res")
+            Log.i(DEV, "Response from ajax: $res")
             
-            // Kiểm tra response có hợp lệ không
             if (res.isBlank()) {
-                Log.e(DEV, "Response rỗng!")
+                Log.e(DEV, "Empty response!")
                 return false
             }
             
             if (!res.contains("sources")) {
-                Log.e(DEV, "Response không chứa sources!")
+                Log.e(DEV, "Response does not contain sources!")
                 Log.i(DEV, "Full response: $res")
                 return false
             }
 
-            // Thử parse JSON với nhiều patterns
-            var json = getParamFromJS(res, "var opts = {\\r\\n\\t\\t\\t\\t\\t\\tsources:", "}]")
+            val json = getParamFromJS(res, "var opts = {\\r\\n\\t\\t\\t\\t\\t\\tsources:", "}]")
             
             if (json == null) {
-                Log.w(DEV, "Không parse được với pattern 1, thử pattern 2...")
-                json = getParamFromJS(res, "sources:", "}]")
-            }
-            
-            if (json == null) {
-                Log.w(DEV, "Không parse được với pattern 2, thử pattern 3...")
-                json = getParamFromJS(res, "sources: ", "}]")
-            }
-            
-            if (json == null) {
-                Log.w(DEV, "Không parse được với pattern 3, thử pattern 4...")
-                json = getParamFromJS(res, "\"sources\":", "}]")
-            }
-            
-            if (json == null) {
-                Log.e(DEV, "Không thể parse JSON từ response!")
+                Log.e(DEV, "Unable to parse JSON from response!")
                 return false
             }
             
@@ -181,7 +162,7 @@ class Vlxx : MainAPI() {
             return true
             
         } catch (e: Exception) {
-            Log.e(DEV, "Lỗi trong loadLinks: ${e.message}")
+            Log.e(DEV, "Error in loadLinks: ${e.message}")
             e.printStackTrace()
             logError(e)
             return false
@@ -197,23 +178,23 @@ class Vlxx : MainAPI() {
             val sourcesList = tryParseJson<List<Sources?>>(json)
             
             if (sourcesList == null || sourcesList.isEmpty()) {
-                Log.e(DEV, "Không parse được sources list hoặc list rỗng")
+                Log.e(DEV, "Failed to parse sources list or list is empty")
                 return
             }
             
             sourcesList.forEach { vidlink ->
                 if (vidlink == null) {
-                    Log.w(DEV, "Source item null, bỏ qua")
+                    Log.w(DEV, "Source item is null, skipping")
                     return@forEach
                 }
                 
                 val file = vidlink.file
                 if (file == null || file.isBlank()) {
-                    Log.w(DEV, "File URL null hoặc rỗng, bỏ qua")
+                    Log.w(DEV, "File URL is null or empty, skipping")
                     return@forEach
                 }
                 
-                Log.i(DEV, "Tìm thấy link: $file - Quality: ${vidlink.label}")
+                Log.i(DEV, "Found link: $file - Quality: ${vidlink.label}")
                 
                 val extractorLinkType = if (file.endsWith("m3u8")) {
                     ExtractorLinkType.M3U8
@@ -232,15 +213,15 @@ class Vlxx : MainAPI() {
                             type = extractorLinkType
                         )
                     )
-                    Log.i(DEV, "Đã thêm link thành công: $file")
+                    Log.i(DEV, "Successfully added link: $file")
                 } catch (e: Exception) {
-                    Log.e(DEV, "Lỗi khi thêm link: ${e.message}")
+                    Log.e(DEV, "Error adding link: ${e.message}")
                     e.printStackTrace()
                     logError(e)
                 }
             }
         } catch (e: Exception) {
-            Log.e(DEV, "Lỗi trong parseAndAddLinks: ${e.message}")
+            Log.e(DEV, "Error in parseAndAddLinks: ${e.message}")
             e.printStackTrace()
             logError(e)
         }
@@ -250,7 +231,7 @@ class Vlxx : MainAPI() {
         try {
             val firstIndex = str.indexOf(key)
             if (firstIndex == -1) {
-                Log.w(DEV, "Không tìm thấy key: $key")
+                Log.w(DEV, "Key not found: $key")
                 return null
             }
             
@@ -259,7 +240,7 @@ class Vlxx : MainAPI() {
             val lastIndex = temp.indexOf(keyEnd)
             
             if (lastIndex == -1) {
-                Log.w(DEV, "Không tìm thấy keyEnd: $keyEnd")
+                Log.w(DEV, "KeyEnd not found: $keyEnd")
                 return null
             }
             
@@ -278,7 +259,7 @@ class Vlxx : MainAPI() {
             return cleaned
             
         } catch (e: Exception) {
-            Log.e(DEV, "Lỗi trong getParamFromJS: ${e.message}")
+            Log.e(DEV, "Error in getParamFromJS: ${e.message}")
             e.printStackTrace()
             logError(e)
         }
