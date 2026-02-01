@@ -81,15 +81,16 @@ class Vlxx : MainAPI() {
     }
 
     override suspend fun load(url: String): LoadResponse {
-        val doc = getPage(url, url).document
+        val cleanUrl = url.replace(" ", "")
+        val doc = getPage(cleanUrl, cleanUrl).document
         val container = doc.selectFirst("div#container")
         val title = container?.selectFirst("h2")?.text() ?: "No Title"
         val descript = container?.selectFirst("div.video-description")?.text()
         
         return newMovieLoadResponse(
             name = title,
-            url = url,
-            dataUrl = url,
+            url = cleanUrl,
+            dataUrl = cleanUrl,
             type = globaltvType,
         ) {
             this.plot = descript
@@ -102,22 +103,23 @@ class Vlxx : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
+        val cleanData = data.replace(" ", "").replace("\n", "").replace("\r", "").trim()
+        
         Log.d(DEV, "START loadLinks")
-        Log.d(DEV, "data = $data")
+        Log.d(DEV, "original data = $data")
+        Log.d(DEV, "cleaned data = $cleanData")
         
         return try {
-            // Extract ID from URL: https://vlxx.ms/video/chong-lanh.../3060/
-            val pathSegments = data.split("/").filter { it.isNotEmpty() }
+            val pathSegments = cleanData.trimEnd('/').split("/").filter { it.isNotEmpty() }
             Log.d(DEV, "pathSegments = $pathSegments")
             
-            val id = pathSegments.getOrNull(pathSegments.size - 1) ?: run {
+            val id = pathSegments.lastOrNull() ?: run {
                 Log.e(DEV, "Cannot extract ID from URL")
                 return false
             }
             Log.d(DEV, "id = $id")
             
             val postUrl = "$mainUrl/ajax.php"
-            Log.d(DEV, "postUrl = $postUrl")
             
             val response = app.post(
                 url = postUrl,
@@ -126,7 +128,7 @@ class Vlxx : MainAPI() {
                     "id" to id,
                     "server" to "1"
                 ),
-                referer = data
+                referer = cleanData
             )
             
             Log.d(DEV, "response.code = ${response.code}")
@@ -139,7 +141,6 @@ class Vlxx : MainAPI() {
                 return false
             }
             
-            // Try to parse sources
             val sourcesRegex = Regex("sources\\s*:\\s*\\[([^\\]]+)\\]")
             val match = sourcesRegex.find(responseText)
             
@@ -160,7 +161,7 @@ class Vlxx : MainAPI() {
                                 url = fileUrl,
                                 type = if (fileUrl.contains("m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
                             ).apply {
-                                referer = data
+                                referer = cleanData
                                 quality = getQualityFromName(source.label)
                             }
                         )
@@ -171,7 +172,6 @@ class Vlxx : MainAPI() {
             } else {
                 Log.e(DEV, "sources not found in response")
                 
-                // Fallback: try to find any video URL
                 val urlRegex = Regex("(https?://[^\\s\"']+\\.m3u8[^\\s\"']*)")
                 val urls = urlRegex.findAll(responseText)
                 
@@ -186,7 +186,7 @@ class Vlxx : MainAPI() {
                             url = videoUrl,
                             type = ExtractorLinkType.M3U8
                         ).apply {
-                            referer = data
+                            referer = cleanData
                         }
                     )
                     found = true
@@ -197,6 +197,7 @@ class Vlxx : MainAPI() {
             
         } catch (e: Exception) {
             Log.e(DEV, "Exception in loadLinks: ${e.message}", e)
+            e.printStackTrace()
             logError(e)
             false
         }
