@@ -120,15 +120,11 @@ class Vlxx : MainAPI() {
         try {
             val pathSplits = data.split("/")
             val id = pathSplits[pathSplits.size - 2]
-            Log.i(DEV, "Data -> $data")
-            Log.i(DEV, "ID -> $id")
-            
-            val cookies = interceptor.getCookieHeaders(data).toMap()
-            Log.i(DEV, "Cookies: $cookies")
+            Log.i(DEV, "Data -> $data id -> $id")
             
             val res = app.post(
                 "$mainUrl/ajax.php",
-                headers = cookies,
+                headers = interceptor.getCookieHeaders(data).toMap(),
                 data = mapOf(
                     "vlxx_server" to "1",
                     "id" to id,
@@ -137,130 +133,66 @@ class Vlxx : MainAPI() {
                 referer = data
             ).text
             
-            Log.i(DEV, "Response from ajax: $res")
-            
-            if (res.isBlank()) {
-                Log.e(DEV, "Empty response!")
-                return false
-            }
-            
-            if (!res.contains("sources")) {
-                Log.e(DEV, "Response does not contain sources!")
-                Log.i(DEV, "Full response: $res")
-                return false
-            }
+            Log.i(DEV, "res $res")
 
             val json = getParamFromJS(res, "var opts = {\\r\\n\\t\\t\\t\\t\\t\\tsources:", "}]")
+            Log.i(DEV, "json $json")
             
-            if (json == null) {
-                Log.e(DEV, "Unable to parse JSON from response!")
-                return false
+            json?.let {
+                tryParseJson<List<Sources?>>(it)?.forEach { vidlink ->
+                    vidlink?.file?.let { file ->
+                        val extractorLinkType = if (file.endsWith("m3u8")) 
+                            ExtractorLinkType.M3U8 
+                        else 
+                            ExtractorLinkType.VIDEO
+                        
+                        try {
+                            callback.invoke(
+                                ExtractorLink(
+                                    source = this.name,
+                                    name = this.name,
+                                    url = file,
+                                    referer = data,
+                                    quality = getQualityFromName(vidlink.label),
+                                    type = extractorLinkType
+                                )
+                            )
+                        } catch (e: Exception) {
+                            logError(e)
+                        }
+                    }
+                }
             }
-            
-            Log.i(DEV, "JSON parsed: $json")
-            parseAndAddLinks(json, data, callback)
             return true
             
         } catch (e: Exception) {
-            Log.e(DEV, "Error in loadLinks: ${e.message}")
-            e.printStackTrace()
             logError(e)
             return false
-        }
-    }
-
-    private fun parseAndAddLinks(
-        json: String,
-        referer: String,
-        callback: (ExtractorLink) -> Unit
-    ) {
-        try {
-            val sourcesList = tryParseJson<List<Sources?>>(json)
-            
-            if (sourcesList == null || sourcesList.isEmpty()) {
-                Log.e(DEV, "Failed to parse sources list or list is empty")
-                return
-            }
-            
-            sourcesList.forEach { vidlink ->
-                if (vidlink == null) {
-                    Log.w(DEV, "Source item is null, skipping")
-                    return@forEach
-                }
-                
-                val file = vidlink.file
-                if (file == null || file.isBlank()) {
-                    Log.w(DEV, "File URL is null or empty, skipping")
-                    return@forEach
-                }
-                
-                Log.i(DEV, "Found link: $file - Quality: ${vidlink.label}")
-                
-                val extractorLinkType = if (file.endsWith("m3u8")) {
-                    ExtractorLinkType.M3U8
-                } else {
-                    ExtractorLinkType.VIDEO
-                }
-                
-                try {
-                    callback.invoke(
-                        ExtractorLink(
-                            source = this.name,
-                            name = this.name,
-                            url = file,
-                            referer = referer,
-                            quality = getQualityFromName(vidlink.label),
-                            type = extractorLinkType
-                        )
-                    )
-                    Log.i(DEV, "Successfully added link: $file")
-                } catch (e: Exception) {
-                    Log.e(DEV, "Error adding link: ${e.message}")
-                    e.printStackTrace()
-                    logError(e)
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(DEV, "Error in parseAndAddLinks: ${e.message}")
-            e.printStackTrace()
-            logError(e)
         }
     }
 
     private fun getParamFromJS(str: String, key: String, keyEnd: String): String? {
         try {
             val firstIndex = str.indexOf(key)
-            if (firstIndex == -1) {
-                Log.w(DEV, "Key not found: $key")
-                return null
-            }
+            if (firstIndex == -1) return null
             
             val startIndex = firstIndex + key.length
             val temp = str.substring(startIndex)
             val lastIndex = temp.indexOf(keyEnd)
-            
-            if (lastIndex == -1) {
-                Log.w(DEV, "KeyEnd not found: $keyEnd")
-                return null
-            }
+            if (lastIndex == -1) return null
             
             val jsonConfig = temp.substring(0, lastIndex + keyEnd.length)
-            Log.i(DEV, "jsonConfig raw: $jsonConfig")
+            Log.i(DEV, "jsonConfig $jsonConfig")
 
-            val cleaned = jsonConfig
+            return jsonConfig
                 .replace("\\r", "")
                 .replace("\\t", "")
                 .replace("\\\"", "\"")
                 .replace("\\\\\\/", "/")
                 .replace("\\n", "")
                 .trim()
-
-            Log.i(DEV, "jsonConfig cleaned: $cleaned")
-            return cleaned
             
         } catch (e: Exception) {
-            Log.e(DEV, "Error in getParamFromJS: ${e.message}")
-            e.printStackTrace()
             logError(e)
         }
         return null
