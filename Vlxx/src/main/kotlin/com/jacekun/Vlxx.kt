@@ -105,7 +105,15 @@ class Vlxx : MainAPI() {
     ): Boolean {
         return try {
             Log.d(DEV, "=== ENTER loadLinks ===")
-            
+            val id = Regex("""(\d+)[/]*$""").find(data)?.groupValues?.get(1) 
+                 ?: return false
+            val res = app.post(
+            "$mainUrl/ajax.php",
+            headers = mapOf(
+                "X-Requested-With" to "XMLHttpRequest",
+                "Referer" to data,
+                "Content-Type" to "application/x-www-form-urlencoded; charset=UTF-8"
+            ),
             val cleanData = try {
                 data.replace(" ", "").replace("\n", "").replace("\r", "").trim()
             } catch (e: Exception) {
