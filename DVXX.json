@@ -1,0 +1,8 @@
+{
+    "name": "DVXX", 
+    "description": "DVXX",
+    "manifestVersion": 2,
+    "pluginLists": [
+      "https://raw.githubusercontent.com/DariusBETA/DVXX/builds/plugins.json"
+    ]
+}
