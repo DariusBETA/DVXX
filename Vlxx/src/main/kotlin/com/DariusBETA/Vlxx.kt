@@ -195,7 +195,7 @@ class Vlxx : MainAPI() {
                                 Log.d(DEV, "Adding: $fileUrl")
                                 try {
                                     callback.invoke(
-                                        ExtractorLink(
+                                        newExtractorLink(
                                             source = name,
                                             name = name,
                                             url = fileUrl,
@@ -235,7 +235,7 @@ class Vlxx : MainAPI() {
                 Log.d(DEV, "Fallback found: $videoUrl")
                 try {
                     callback.invoke(
-                        ExtractorLink(
+                        newExtractorLink(
                             source = name,
                             name = name,
                             url = videoUrl,
@@ -264,3 +264,4 @@ class Vlxx : MainAPI() {
         @JsonProperty("label") val label: String? = null
     )
 }
+
